@@ -21,6 +21,7 @@ Why this README?
 ## Project layout (important files)
 
 - `backend/` — Flask server (`app.py`) that accepts a PDF and returns Mermaid code and summary
+ - `backend/` — Flask server (`app.py`) that accepts a PDF or raw text and returns Mermaid code and summary
 - `requirements.txt` — consolidated Python dependencies for the Blockdiagram folder
 - `.env.example` — example environment variables (DO NOT put secrets here)
 - `frontend/llm-chart-scribe/` — Vite + React demo UI for uploading PDFs and viewing generated diagrams
@@ -76,6 +77,9 @@ python app.py
 
 The backend listens by default on port 5000. It exposes an endpoint `/api/process-pdf` that accepts a `multipart/form-data` POST with a `file` field (PDF).
 
+The backend also exposes `/api/process-text` which accepts a JSON POST with a `text` field: `{"text": "..."}`. This allows pasting or sending plain text directly to the summarizer + mermaid generator.
+
+
 4) Install and run the frontend demo (using Bun)
 
 If you use Bun (recommended for faster installs and startup):
@@ -100,6 +104,63 @@ yarn dev
 ```
 
 Open the dev server URL shown by Vite (usually http://localhost:5173) and upload a PDF to test the end-to-end pipeline.
+
+---
+
+## Option C — host frontend and backend separately (recommended for scalability)
+
+This repository works well when the frontend and backend are deployed independently: host the frontend on a static host (Vercel/Netlify) and the backend on a server or Hugging Face Space. Below are the steps and exact environment vars to wire them together.
+
+High-level flow:
+- Frontend (Vite/React) is built and served from a static host (Vercel, Netlify, or S3 + CDN).
+- Backend (Flask) runs on a separate host (Hugging Face Space, VPS, Heroku, Railway) and exposes `/api/*` endpoints.
+- Frontend calls backend using a base URL stored in `VITE_API_BASE_URL`.
+
+Steps to deploy separately
+
+1) Prepare frontend for deployment
+
+```bash
+cd frontend/llm-chart-scribe
+# build production assets
+# if using bun: bun build -- (or npm run build)
+npm run build
+```
+
+Deploy the generated `dist/` to Vercel/Netlify or push the frontend repo to your chosen host. During deployment set an environment variable in the host named `VITE_API_BASE_URL` with the backend URL (for example `https://my-backend.example.com`).
+
+2) Prepare backend for deployment
+
+- Ensure your backend reads the frontend origin(s) from `FRONTEND_ORIGINS` and binds to the correct host/port. Example env vars used by this repo:
+
+```
+PORT=5000
+FRONTEND_ORIGINS=https://your-frontend.vercel.app
+GEMINI_API_KEY=...
+MISTRAL_API_KEY=...
+```
+
+- For Hugging Face Spaces you can either use Docker or the Python runtime. When using a separate host, set `FRONTEND_ORIGINS` to the frontend URL so CORS is restricted to your site.
+
+3) Wire frontend to backend
+
+- On your frontend host, set `VITE_API_BASE_URL` to the backend base URL, e.g. `https://my-backend.example.com`.
+- On your backend host, set `FRONTEND_ORIGINS` to the frontend URL.
+
+4) Local dev proxy (optional)
+
+During local frontend development you can proxy `/api` to your running backend by setting `VITE_API_BASE_URL` in `frontend/llm-chart-scribe/.env` (the Vite dev server picks it up). A dev proxy is included in `vite.config.ts` and will forward `/api` requests to that base URL.
+
+Security and secrets
+
+- Do NOT put secret keys in frontend env vars. Use the backend to keep secrets.
+- Manage runtime secrets in the deployment platform (Vercel/Netlify/Spaces secrets, Heroku config vars, GitHub Actions secrets).
+
+Notes
+
+- The backend in this repo supports a `FRONTEND_ORIGINS` env var (comma-separated) to restrict CORS. If unset, CORS is permissive (useful for initial dev).
+- The frontend expects `VITE_API_BASE_URL` at build time to call your backend. Make sure you configure that env var in your host.
+
 
 ---
 
@@ -139,10 +200,22 @@ POST /api/process-pdf
 - Accepts: form-data `file` (PDF)
 - Returns: JSON containing `mermaid_code`, `summary`, and some stats
 
+POST /api/process-text
+- Accepts: JSON `{ "text": "..." }` (raw text to summarize and convert to mermaid)
+- Returns: JSON containing `mermaid_code`, `summary`, and some stats
+
 Example using curl:
 
 ```bash
 curl -F "file=@./example.pdf" http://localhost:5000/api/process-pdf
+```
+
+Example sending raw text with curl:
+
+```bash
+curl -s -X POST http://localhost:5000/api/process-text \
+	-H "Content-Type: application/json" \
+	-d '{"text":"This is some input text to summarize and convert to mermaid."}'
 ```
 
 ---

@@ -20,6 +20,8 @@ const Index: React.FC = () => {
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [currentMermaidCode, setCurrentMermaidCode] = useState<string>("");
+  const [inputMode, setInputMode] = useState<'document' | 'text'>('document');
+  const [textInput, setTextInput] = useState<string>('');
 
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
@@ -52,6 +54,35 @@ const Index: React.FC = () => {
     }
   };
 
+  const handleTextSubmit = async () => {
+    setIsLoading(true);
+    setError("");
+    setUploadedFile(null);
+
+    try {
+      const response = await fetch("http://localhost:5000/api/process-text", {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textInput }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Processing failed");
+      }
+
+      setResult(data);
+      setCurrentMermaidCode(data.mermaid_code);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setResult(null);
+      setCurrentMermaidCode("");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleCodeChange = (newCode: string) => {
     setCurrentMermaidCode(newCode);
   };
@@ -64,14 +95,43 @@ const Index: React.FC = () => {
             LLM Chart Scribe
           </h1>
           <p className="text-lg text-gray-600">
-            Transform PDF documents into interactive flowcharts using AI
+            Transform documents or pasted text into interactive flowcharts using AI
           </p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[80vh]">
           {/* Left side - Upload and Document info */}
           <div className="space-y-6">
-            <UploadZone onFileUpload={handleFileUpload} isLoading={isLoading} />
+            <div className="flex items-center gap-4">
+              <label className={`px-3 py-1 rounded cursor-pointer ${inputMode === 'document' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setInputMode('document')}>Document</label>
+              <label className={`px-3 py-1 rounded cursor-pointer ${inputMode === 'text' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setInputMode('text')}>Text</label>
+            </div>
+
+            {inputMode === 'document' ? (
+              <UploadZone onFileUpload={handleFileUpload} isLoading={isLoading} />
+            ) : (
+              <div className="h-full">
+                <div className="bg-white rounded-lg p-4 border border-gray-200 h-full flex flex-col">
+                  <textarea
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    placeholder="Paste or type your text here..."
+                    className="flex-1 w-full p-3 border rounded resize-none focus:outline-none focus:ring"
+                    rows={12}
+                    disabled={isLoading}
+                  />
+                  <div className="mt-3 flex items-center justify-end">
+                    <button
+                      onClick={handleTextSubmit}
+                      disabled={isLoading || !textInput.trim()}
+                      className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+                    >
+                      Generate Chart
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {uploadedFile && (
               <DocumentCard

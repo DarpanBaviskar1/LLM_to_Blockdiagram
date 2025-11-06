@@ -53,7 +53,7 @@ export const ChartDisplay: React.FC<ChartDisplayProps> = ({
           <CardTitle>Generated Chart</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center h-64">
-          <p className="text-gray-500">Upload a PDF to generate a chart</p>
+          <p className="text-gray-500">Provide a document or paste text to generate a chart</p>
         </CardContent>
       </Card>
     );
