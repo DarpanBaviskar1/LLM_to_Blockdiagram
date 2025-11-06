@@ -307,40 +307,22 @@ def text_to_mermaid_complete(input_text: str, output_file: str = None):
     print("📝 Generating structured summary from text...")
     try:
         summary_prompt = ChatPromptTemplate.from_template(
-            """Analyze this research paper and create a comprehensive structured summary that captures:
+             """You are given a short story or narrative passage. Produce a concise, story-focused summary aimed at diagramming the narrative. Provide five short sections, each as a single-line bullet:
 
-            **METHODOLOGY & APPROACH:**
-            - Research objectives and goals
-            - Proposed methods, algorithms, or frameworks
-            - Key techniques and approaches used
-            - Experimental setup and procedures
+            CHARACTERS: comma-separated list of main characters (1-3 words each)
+            RELATIONSHIPS: short phrases describing key relationships (e.g., "Alice → Bob: mentor")
+            LOCATIONS: important settings (comma-separated)
+            TIMELINE: 4-8 short event phrases in chronological order (comma-separated)
+            RESOLUTION: one short sentence describing the ending or outcome
 
-            **SYSTEM ARCHITECTURE & COMPONENTS:**
-            - Main system components and modules
-            - Data flow and processing pipelines
-            - Input sources and output destinations
-            - Dependencies between components
+            Output only these five lines (no extra text, no markdown). Example:
+            CHARACTERS: Alice, Bob
+            RELATIONSHIPS: Alice → Bob: collaborator
+            LOCATIONS: Paris, Berlin
+            TIMELINE: Meeting in Paris, Decision about project, Travel to Berlin, Update sent
+            RESOLUTION: The team agrees to continue work remotely
 
-            **PROCESSES & WORKFLOWS:**
-            - Step-by-step procedures and workflows
-            - Data transformation processes
-            - Decision points and conditional logic
-            - Feedback loops and iterations
-
-            **KEY ENTITIES & RELATIONSHIPS:**
-            - Important concepts, variables, and parameters
-            - Relationships between different elements
-            - Causal connections and dependencies
-            - Hierarchical structures
-
-            **EVALUATION & RESULTS:**
-            - Evaluation methods and metrics
-            - Comparison processes
-            - Result analysis workflows
-
-            Extract ALL significant elements that show the complete research methodology, system design, and process flows. Include technical details that would be essential for understanding the full scope of the work.
-
-            Research Paper Content: {context}"""
+            Story content: {context}"""
         )
 
         # Convert text to LangChain Document format
