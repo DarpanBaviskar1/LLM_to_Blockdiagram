@@ -20,7 +20,7 @@ CORS(app, origins=["https://llm-to-blockdiagram-5ro6.vercel.app"],
      supports_credentials=True)
 
 
-@app.route('/', methods=['GET'])
+@app.route('/api/endpoint', methods=['GET'])
 def index():
     """Simple index route to help with debugging and to avoid 404 on root access."""
     return jsonify({
