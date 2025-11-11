@@ -16,7 +16,8 @@ from summary_refined import PDFSummarizer
 # execution environment.
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app, origins=["https://llm-to-blockdiagram-5ro6.vercel.app"], 
+     supports_credentials=True)
 
 
 @app.route('/', methods=['GET'])
