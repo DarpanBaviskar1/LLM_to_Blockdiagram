@@ -7,8 +7,12 @@ import traceback
 import re
 
 # Add the path to your endtoend.py script
+# Use relative path from backend directory
+import pathlib
+backend_dir = pathlib.Path(__file__).parent.resolve()
+chart_generation_dir = backend_dir.parent / "Chart-Generation-using-LLMs"
+sys.path.append(str(chart_generation_dir))
 
-sys.path.append("/home/darpan/Desktop/Blockdiagram/Chart-Generation-using-LLMs")
 from endtoend import pdf_to_mermaid_complete, text_to_mermaid_complete
 from summary_refined import PDFSummarizer
 # Note: import mermaid_code lazily inside endpoints to avoid import-time
@@ -16,7 +20,8 @@ from summary_refined import PDFSummarizer
 # execution environment.
 
 app = Flask(__name__)
-CORS(app, origins=["https://llm-to-blockdiagram-5ro6.vercel.app"], 
+# Allow localhost for development and Vercel deployment
+CORS(app, origins=["http://localhost:8080", "http://localhost:5173", "http://localhost:3000", "https://llm-to-blockdiagram-5ro6.vercel.app"], 
      supports_credentials=True)
 
 
