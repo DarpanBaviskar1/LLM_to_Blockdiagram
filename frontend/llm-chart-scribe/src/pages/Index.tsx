@@ -15,6 +15,8 @@ interface ProcessingResult {
 }
 
 const Index: React.FC = () => {
+  // API base can be configured via Vite env var VITE_API_BASE (set this in Vercel to your Railway URL)
+  const apiBase = (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:5000'
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<ProcessingResult | null>(null);
@@ -32,7 +34,7 @@ const Index: React.FC = () => {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch("http://localhost:5000/api/process-pdf", {
+      const response = await fetch(`${apiBase}/api/process-pdf`, {
         method: "POST",
         body: formData,
       });
@@ -60,7 +62,7 @@ const Index: React.FC = () => {
     setUploadedFile(null);
 
     try {
-      const response = await fetch("http://localhost:5000/api/process-text", {
+      const response = await fetch(`${apiBase}/api/process-text`, {
         method: "POST",
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textInput }),

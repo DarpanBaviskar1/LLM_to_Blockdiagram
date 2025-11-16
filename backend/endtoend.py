@@ -16,6 +16,165 @@ from pdf_scanner_alternative import extract_with_pdfplumber
 from dotenv import load_dotenv
 
 
+def _choose_diagram_type(llm, summary: str) -> str:
+    """Ask the LLM to choose the best mermaid diagram type for a given summary.
+
+    Returns a diagram type name (one of flowchart, sequenceDiagram,
+    classDiagram, gantt, stateDiagram, erDiagram, pie, journey). Falls back
+    to 'flowchart' if unclear.
+    """
+    choice_prompt = ChatPromptTemplate.from_template(
+        """You are given a short structured summary of a document or story.
+
+        Choose the single BEST Mermaid diagram type to represent this content
+        visually, selecting from these options (output only the type name):
+        flowchart, sequenceDiagram, classDiagram, gantt, stateDiagram, erDiagram, pie, journey
+
+        Very briefly consider which type suits the content (timeline -> gantt,
+        interactions -> sequenceDiagram, entities/relations -> classDiagram or erDiagram,
+        proportions -> pie, state changes -> stateDiagram, tasks -> flowchart/journey),
+        then output only the chosen type name (one word).
+
+        Summary: {context}"""
+    )
+
+    choice_chain = create_stuff_documents_chain(llm, choice_prompt)
+    choice_raw = choice_chain.invoke({"context": [Document(page_content=summary)]})
+    if not choice_raw:
+        return 'flowchart'
+
+    choice = choice_raw.strip().split()[0].lower()
+    mapping = {
+        'flowchart': 'flowchart',
+        'sequence': 'sequenceDiagram',
+        'sequencediagram': 'sequenceDiagram',
+        'class': 'classDiagram',
+        'classdiagram': 'classDiagram',
+        'gantt': 'gantt',
+        'state': 'stateDiagram',
+        'statediagram': 'stateDiagram',
+        'er': 'erDiagram',
+        'erd': 'erDiagram',
+        'erdiagram': 'erDiagram',
+        'pie': 'pie',
+        'journey': 'journey'
+    }
+
+    return mapping.get(choice, 'flowchart')
+
+
+def _generate_mermaid_for_type(llm, summary: str, diagram_type: str) -> str:
+    """Generate mermaid code for a given diagram type using type-specific prompts."""
+    templates = {
+        'flowchart': (
+            """Create a Mermaid flowchart that visually represents the summary below.
+
+            GUIDELINES:
+            - Start with EXACTLY: flowchart TD
+            - Use concise node labels (1-4 words) and simple node IDs A..Z
+            - Use --> or -->|label| for connections
+            - Output ONLY the Mermaid diagram lines (no commentary)
+
+            Summary: {context}"""
+        ),
+        'sequenceDiagram': (
+            """Create a Mermaid sequenceDiagram that represents interactions described in the summary.
+
+            GUIDELINES:
+            - Start with EXACTLY: sequenceDiagram
+            - Use participant lines and concise messages (participant A as \"Alice\")
+            - Represent chronological messages between participants
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        ),
+        'classDiagram': (
+            """Create a Mermaid classDiagram that models the main entities and their relationships.
+
+            GUIDELINES:
+            - Start with EXACTLY: classDiagram
+            - Define classes with fields where appropriate and show relationships (--> or <|--)
+            - Use concise class and field names
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        ),
+        'gantt': (
+            """Create a Mermaid gantt chart representing timeline or tasks from the summary.
+
+            GUIDELINES:
+            - Start with EXACTLY: gantt
+            - Use date format YYYY-MM-DD or relative dates (after x)
+            - Define tasks, durations, and dependencies if present
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        ),
+        'stateDiagram': (
+            """Create a Mermaid stateDiagram representing state transitions in the summary.
+
+            GUIDELINES:
+            - Start with EXACTLY: stateDiagram-v2
+            - Define states and transitions using -->
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        ),
+        'erDiagram': (
+            """Create a Mermaid ER diagram representing entities and relationships.
+
+            GUIDELINES:
+            - Start with EXACTLY: erDiagram
+            - Define entities and relationships with cardinality
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        ),
+        'pie': (
+            """Create a Mermaid pie chart representing proportional data in the summary.
+
+            GUIDELINES:
+            - Start with EXACTLY: pie
+            - Provide label : value pairs
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        ),
+        'journey': (
+            """Create a Mermaid journey diagram representing stages or user journey from the summary.
+
+            GUIDELINES:
+            - Start with EXACTLY: journey
+            - Use stages and steps concisely
+            - Output only the Mermaid diagram lines
+
+            Summary: {context}"""
+        )
+    }
+
+    tpl = templates.get(diagram_type, templates['flowchart'])
+    mermaid_prompt = ChatPromptTemplate.from_template(tpl)
+    mermaid_chain = create_stuff_documents_chain(llm, mermaid_prompt)
+    mermaid_code = mermaid_chain.invoke({"context": [Document(page_content=summary)]})
+
+    if not isinstance(mermaid_code, str):
+        mermaid_code = str(mermaid_code)
+
+    mermaid_code = mermaid_code.strip()
+
+    # Remove common fences
+    if '```mermaid' in mermaid_code:
+        mermaid_code = mermaid_code.split('```mermaid')[1].split('```')[0].strip()
+    elif '```' in mermaid_code:
+        mermaid_code = mermaid_code.replace('```', '').strip()
+
+    # Normalize lines
+    lines = mermaid_code.split('\n')
+    cleaned = [ln.strip() for ln in lines if ln.strip()]
+    mermaid_code = '\n'.join(cleaned)
+    return mermaid_code
+
+
 
 
 def pdf_to_mermaid_complete(pdf_path: str, output_file: str = None):
@@ -96,84 +255,18 @@ def pdf_to_mermaid_complete(pdf_path: str, output_file: str = None):
     except Exception as e:
         raise Exception(f"Summary generation failed: {e}")
     
-    # Step 3: Generate Mermaid code
-    print("🎨 Generating Mermaid flowchart code...")
+    # Step 3: Choose diagram type and generate Mermaid code
+    print("🎨 Selecting diagram type and generating Mermaid code...")
     try:
-        # Updated Mermaid generation prompt for comprehensive diagrams with strict syntax
-        # Mermaid prompt adapted for story diagrams
-        mermaid_prompt = ChatPromptTemplate.from_template(
-            """Create a Mermaid flowchart that visually represents the short story described in the summary.
+        diagram_type = _choose_diagram_type(llm, summary)
+        mermaid_code = _generate_mermaid_for_type(llm, summary, diagram_type)
 
-            GUIDELINES:
-            1. Start with EXACTLY: flowchart TD
-            2. Use these node shapes where appropriate:
-               - A(Character) for characters (round node)
-               - A[Event] for events or actions (box)
-               - A{{Decision}} for important choices or conflicts
-               - A[[Location]] for settings or places
-               - A((Outcome)) for endings or consequences
-            3. Use simple node IDs: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z
-            4. For connections, use ONLY: --> or -->|label|
-            5. Node labels must be concise (2-4 words)
-            6. NO special characters in node IDs (only A-Z)
-            7. NO quotes around labels
-            8. NO extra prose: output ONLY the Mermaid diagram lines
+        if not mermaid_code or not mermaid_code.strip():
+            raise Exception("LLM returned empty mermaid code")
 
-            STRUCTURE:
-            - Build the story timeline using Event nodes connected in chronological order
-            - Link Characters to Events where they participate
-            - Include Decision nodes when the plot branches or a major choice occurs
-            - End with an Outcome node describing the resolution
-
-            OUTPUT RULES:
-            - Provide ONLY the Mermaid code (no markdown fences, no commentary)
-            - Ensure every node referenced in connections is defined
-
-            Based on the summary, create a syntactically correct Mermaid flowchart:
-            {context}"""
-        )
-        
-        # Convert summary to document format
-        summary_documents = [Document(page_content=summary)]
-        
-        # Create Mermaid generation chain
-        mermaid_chain = create_stuff_documents_chain(llm, mermaid_prompt)
-        
-        # Generate Mermaid code
-        mermaid_code = mermaid_chain.invoke({"context": summary_documents})
-        
-        # Clean up the response more thoroughly
-        mermaid_code = mermaid_code.strip()
-        
-        # Remove any potential wrapper tags
-        if '```mermaid' in mermaid_code:
-            mermaid_code = mermaid_code.split('```mermaid')[1].split('```')[0].strip()
-        elif '```' in mermaid_code:
-            mermaid_code = mermaid_code.replace('```', '').strip()
-        
-        # Remove any extra explanatory text
-        lines = mermaid_code.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            line = line.strip()
-            # Keep only lines that are flowchart definition or node connections
-            if (line.startswith('flowchart') or 
-                '-->' in line or 
-                line.endswith(']') or 
-                line.endswith(')') or 
-                line.endswith('}}') or
-                line.endswith('/]')):
-                cleaned_lines.append(line)
-        
-        mermaid_code = '\n'.join(cleaned_lines)
-        
-        # Validate basic syntax
-        if not mermaid_code.startswith('flowchart'):
-            raise Exception("Generated code doesn't start with 'flowchart'")
-        
+        print(f"✓ Chosen diagram type: {diagram_type}")
         print(f"✓ Generated Mermaid code ({len(mermaid_code)} characters)")
-        
+
     except Exception as e:
         raise Exception(f"Mermaid code generation failed: {e}")
     
@@ -213,6 +306,7 @@ def pdf_to_mermaid_complete(pdf_path: str, output_file: str = None):
         'pdf_path': pdf_path,
         'summary': summary,
         'mermaid_code': mermaid_code,
+        'diagram_type': diagram_type,
         'text_length': len(input_text),
         'summary_length': len(summary),
         'mermaid_length': len(mermaid_code)
@@ -289,56 +383,16 @@ def text_to_mermaid_complete(input_text: str, output_file: str = None):
     except Exception as e:
         raise Exception(f"Summary generation failed: {e}")
 
-    # Mermaid prompt tailored for short-story diagrams (compact, timeline + interactions)
-    print("🎨 Generating Mermaid flowchart code from summary...")
+    # Choose diagram type and generate mermaid code for text input
+    print("🎨 Selecting diagram type and generating Mermaid code from summary...")
     try:
-        mermaid_prompt = ChatPromptTemplate.from_template(
-            """Produce a concise Mermaid flowchart representing the story. Rules:
+        diagram_type = _choose_diagram_type(llm, summary)
+        mermaid_code = _generate_mermaid_for_type(llm, summary, diagram_type)
 
-            - Start output with: flowchart TD
-            - Use node types:
-              * A(Character) for characters
-              * A[Event] for events (timeline)
-              * A{{Decision}} for key choices or conflicts
-              * A[[Location]] for places
-              * A((Outcome)) for final resolution
-            - Keep labels short (1-4 words)
-            - Use node IDs A..Z
-            - Connect events in chronological order, and link characters to the events they participate in
-            - Output ONLY the mermaid diagram lines (no extra text or markdown)
+        if not mermaid_code or not mermaid_code.strip():
+            raise Exception("LLM returned empty mermaid code")
 
-            Prefer a compact diagram (8-14 nodes). Based on the summary below, generate the mermaid code:
-            {context}"""
-        )
-
-        summary_documents = [Document(page_content=summary)]
-        mermaid_chain = create_stuff_documents_chain(llm, mermaid_prompt)
-        mermaid_code = mermaid_chain.invoke({"context": summary_documents})
-
-        mermaid_code = mermaid_code.strip()
-
-        if '```mermaid' in mermaid_code:
-            mermaid_code = mermaid_code.split('```mermaid')[1].split('```')[0].strip()
-        elif '```' in mermaid_code:
-            mermaid_code = mermaid_code.replace('```', '').strip()
-
-        lines = mermaid_code.split('\n')
-        cleaned_lines = []
-        for line in lines:
-            line = line.strip()
-            if (line.startswith('flowchart') or 
-                '-->' in line or 
-                line.endswith(']') or 
-                line.endswith(')') or 
-                line.endswith('}}') or
-                line.endswith('/]')):
-                cleaned_lines.append(line)
-
-        mermaid_code = '\n'.join(cleaned_lines)
-
-        if not mermaid_code.startswith('flowchart'):
-            raise Exception("Generated code doesn't start with 'flowchart'")
-
+        print(f"✓ Chosen diagram type: {diagram_type}")
         print(f"✓ Generated Mermaid code ({len(mermaid_code)} characters)")
 
     except Exception as e:
@@ -375,6 +429,7 @@ def text_to_mermaid_complete(input_text: str, output_file: str = None):
     results = {
         'summary': summary,
         'mermaid_code': mermaid_code,
+        'diagram_type': diagram_type,
         'text_length': len(input_text),
         'summary_length': len(summary),
         'mermaid_length': len(mermaid_code)
@@ -406,7 +461,7 @@ def display_results(results):
 # Main execution
 if __name__ == "__main__":
     # Configuration - Update these paths
-    PDF_PATH = "Chart-Generation-using-LLMs/docs/doc4.pdf"  # Change this to your PDF file path
+    PDF_PATH = "backend/Chart-Generation-using-LLMs/docs/doc4.pdf"  # Change this to your PDF file path
     OUTPUT_FILE = "generated_diagram.html"  # Changed from .mmd to .html
     
     try:
