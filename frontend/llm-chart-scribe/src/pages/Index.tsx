@@ -32,7 +32,7 @@ const Index: React.FC = () => {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch("https://llm-to-blockdiagram.vercel.app/api/process-pdf", {
+      const response = await fetch("http://localhost:5000/api/process-pdf", {
         method: "POST",
         body: formData,
       });
@@ -60,7 +60,7 @@ const Index: React.FC = () => {
     setUploadedFile(null);
 
     try {
-      const response = await fetch("https://llm-to-blockdiagram.vercel.app/api/process-text", {
+      const response = await fetch("http://localhost:5000/api/process-text", {
         method: "POST",
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textInput }),
